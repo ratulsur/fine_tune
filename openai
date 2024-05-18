@@ -1,0 +1,107 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tiktoken
+import openai
+
+data = pd.read_csv("reports_1.csv")
+
+data = pd.read_csv("reports_1.csv")
+
+data = data.dropna(subset = ['report'])
+
+data.info()
+
+grouped_data = data.groupby('medical_specialty').count()
+
+grouped_data = data.groupby('medical_specialty').sample(20, random_state=42)
+
+val_test_data = grouped_data.groupby('medical_specialty').sample(10, random_state=42)
+
+val_data = val_test_data.head(5)
+
+test_data = val_test_data.tail(5)
+
+train_data = grouped_data[~grouped_data.index.isin(val_test_data.index)]
+
+def num_token_from_string(string):
+    encoder = tiktoken.get_encoding('cl100k_base')
+    num_token = len(encoder.encode(string))
+    return num_token
+
+data = train_data['report'].apply(num_token_from_string)
+
+data.sum()
+cost = (338456*0.008)/1000
+
+system_prompt = "based on the medical description, please classify the disease into one of the following:'Cardiovascular / Pulmonary', 'Gastroenterology', 'Neurology', 'Radiology','Surgery'"
+
+def df_to_format(df):
+    formatted_data = []
+    for index, row in df.iterrows():
+        entry = {
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': row['report']},
+                {'role': 'assistant', 'content': row['medical_specialty']}
+            ]
+        }
+        formatted_data.append(entry)
+    return formatted_data
+with open('ft_training_data.jsonl', 'w') as f:
+    for entry in data:
+        f.write(json.dumps(entry))
+        f.write('\n')
+validation_data = df_to_format(val_data)
+with open('ft_validation_data.jsonl', 'w') as f:
+    for entry in validation_data:
+        f.write(json.dumps(entry))
+        f.write('\n')
+
+
+openai.api_key = ''
+
+client = OpenAI()
+training_file_response = client.files.create(file=open('ft_training_data.jsonl', 'rb'),purpose="fine-tune")
+validation_file_response = client.files.create(file=open('ft_validation_data.jsonl', 'rb'),purpose="fine-tune")
+training_file_response
+
+fine_tune_response = client.fine_tuning.jobs.create(training_file=training_file_response.id
+                                                    model='gpt-3.5-turbo-0125',
+                                                    hyperparameters={'n_epochs':1},
+                                                    validation_file=validation_file_response.id)
+
+
+def classify_reports(report, model):
+    completion = client.chat.completion.create(
+        model = 'ft:gpt-3.5-turbo-0125:personal:ex-1:9PqBNF2l',
+        messages = [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': row['report']}
+                
+            )
+    return completion
+
+predicted_classes = []
+ground_truth_classes = []
+
+for line in test.iterrows():
+    report,specialty = line[1]['report']line[1]['report']
+    ground_truth_classes.append(specialty.strip())
+    prediction = classify_reports(report, model='gpt-3.5-turbo-0125')
+    predicted_classes.append(prediction.choices[0].message.content.strip())
+
+(np.array(predicted_classes)==np.array(ground_truth_classes)).mean()
+
+predicted_classes = []
+ground_truth_classes = []
+
+for line in test.iterrows():
+    report,specialty = line[1]['report']line[1]['report']
+    ground_truth_classes.append(specialty.strip())
+    prediction = classify_reports(report, model='ft:gpt-3.5-turbo-0125:personal:ex-1:9PqBNF2l')
+    predicted_classes.append(prediction.choices[0].message.content.strip())
+
+(np.array(predicted_classes)==np.array(ground_truth_classes)).mean()
+
